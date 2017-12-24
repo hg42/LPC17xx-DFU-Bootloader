@@ -55,6 +55,15 @@ FIL		file;
 const char *firmware_file = "firmware.bin";
 const char *firmware_old  = "firmware.cur";
 
+static uint32_t delay_loop(uint32_t count)
+{
+	volatile uint32_t j, del;
+	for(j=0; j<count; ++j){
+		del=j; // volatiles, so the compiler will not optimize the loop
+	}
+	return del;
+}
+
 void setleds(int leds)
 {
 	GPIO_write(LED1, leds &  1);
@@ -62,6 +71,7 @@ void setleds(int leds)
 	GPIO_write(LED3, leds &  4);
 	GPIO_write(LED4, leds &  8);
 	GPIO_write(LED5, leds & 16);
+	delay_loop(1000000);
 }
 
 int isp_btn_pressed(void)
@@ -82,14 +92,16 @@ void start_dfu(void)
 void check_sd_firmware(void)
 {
 	int r;
-// 	printf("Check SD\n");
+ 	printf("Check SD\n");
 	f_mount(0, &fat);
 	if ((r = f_open(&file, firmware_file, FA_READ)) == FR_OK)
 	{
-// 		printf("Flashing firmware...\n");
+		setleds(0b01111);
+ 		printf("Flashing firmware...\n");
 		uint8_t buf[512];
 		unsigned int r = sizeof(buf);
 		uint32_t address = USER_FLASH_START;
+		int count = 0;
 		while (r == sizeof(buf))
 		{
 			if (f_read(&file, buf, sizeof(buf), &r) != FR_OK)
@@ -98,9 +110,10 @@ void check_sd_firmware(void)
 				return;
 			}
 
-			setleds((address - USER_FLASH_START) >> 15);
+			//setleds((address - USER_FLASH_START) >> 15);
+			setleds(++count);
 
-// 			printf("\t0x%lx\n", address);
+ 			//printf("\t0x%lx\n", address);
 
 			write_flash((void *) address, (char *)buf, sizeof(buf));
 			address += r;
@@ -108,14 +121,14 @@ void check_sd_firmware(void)
 		f_close(&file);
 		if (address > USER_FLASH_START)
 		{
-// 			printf("Complete!\n");
+ 			printf("Complete!\n");
 			r = f_unlink(firmware_old);
 			r = f_rename(firmware_file, firmware_old);
 		}
 	}
 	else
 	{
-// 		printf("open: %d\n", r);
+ 		printf("open: %d\n", r);
 	}
 }
 
@@ -132,20 +145,9 @@ static void boot(uint32_t a)
     ((exec)(*start))();
 }
 
-static uint32_t delay_loop(uint32_t count)
-{
-	volatile uint32_t j, del;
-	for(j=0; j<count; ++j){
-		del=j; // volatiles, so the compiler will not optimize the loop
-	}
-	return del;
-}
-
 static void new_execute_user_code(void)
 {
 	uint32_t addr=(uint32_t)USER_FLASH_START;
-	// delay
-	delay_loop(3000000);
 	// relocate vector table
 	SCB->VTOR = (addr & 0x1FFFFF80);
 	// switch to RC generator
@@ -178,83 +180,6 @@ static void new_execute_user_code(void)
 	boot(addr);
 }
 
-int main(void)
-{
-	WDT_Feed();
-
-	GPIO_init(ISP_BTN); GPIO_input(ISP_BTN);
-
-	GPIO_init(LED1); GPIO_output(LED1);
-	GPIO_init(LED2); GPIO_output(LED2);
-	GPIO_init(LED3); GPIO_output(LED3);
-	GPIO_init(LED4); GPIO_output(LED4);
-	GPIO_init(LED5); GPIO_output(LED5);
-
-	// turn off heater outputs
-	GPIO_init(P2_4); GPIO_output(P2_4); GPIO_write(P2_4, 0);
-	GPIO_init(P2_5); GPIO_output(P2_5); GPIO_write(P2_5, 0);
-	GPIO_init(P2_6); GPIO_output(P2_6); GPIO_write(P2_6, 0);
-	GPIO_init(P2_7); GPIO_output(P2_7); GPIO_write(P2_7, 0);
-
-	setleds(31);
-
-	UART_init(UART_RX, UART_TX, APPBAUD);
-
-	printf("Bootloader Start\n");
-
-	// give SD card time to wake up
-	for (volatile int i = (1UL<<12); i; i--);
-
-	SDCard_init(P0_9, P0_8, P0_7, P0_6);
-	if (SDCard_disk_initialize() == 0)
-		check_sd_firmware();
-
-	int dfu = 0;
-	if (isp_btn_pressed() == 0)
-	{
-		printf("ISP button pressed, entering DFU mode\n");
-		dfu = 1;
-	}
-	else if (WDT_ReadTimeOutFlag()) {
-		WDT_ClrTimeOutFlag();
-		printf("WATCHDOG reset, entering DFU mode\n");
-		dfu = 1;
-	} else if (*(uint32_t *)USER_FLASH_START == 0xFFFFFFFF) {
-        printf("User flash empty, enabling DFU\n");
-        dfu = 1;
-    }
-
-	if (dfu)
-		start_dfu();
-
-#ifdef WATCHDOG
-	WDT_Init(WDT_CLKSRC_IRC, WDT_MODE_RESET);
-	WDT_Start(1<<22);
-#endif
-
-	// grab user code reset vector
-// #ifdef DEBUG
-	unsigned *p = (unsigned *)(USER_FLASH_START +4);
-	printf("Jumping to 0x%x\n", *p);
-// #endif
-
-	while (UART_busy());
-	printf("Jump!\n");
-	while (UART_busy());
-	UART_deinit();
-
-	new_execute_user_code();
-
-    UART_init(UART_RX, UART_TX, APPBAUD);
-
-	printf("This should never happen\n");
-
-	while (UART_busy());
-
-	for (volatile int i = (1<<18);i;i--);
-
-	NVIC_SystemReset();
-}
 
 
 DWORD get_fattime(void)
@@ -302,4 +227,109 @@ void BusFault_Handler() {
 void UsageFault_Handler() {
 // 	printf("UsageFault\n");
 	for (;;);
+}
+
+int main(void)
+{
+	WDT_Feed();
+
+	GPIO_init(ISP_BTN); GPIO_input(ISP_BTN);
+
+	GPIO_init(LED1); GPIO_output(LED1);
+	GPIO_init(LED2); GPIO_output(LED2);
+	GPIO_init(LED3); GPIO_output(LED3);
+	GPIO_init(LED4); GPIO_output(LED4);
+	GPIO_init(LED5); GPIO_output(LED5);
+
+	// turn off heater outputs
+	GPIO_init(P2_4); GPIO_output(P2_4); GPIO_write(P2_4, 0);
+	GPIO_init(P2_5); GPIO_output(P2_5); GPIO_write(P2_5, 0);
+	GPIO_init(P2_6); GPIO_output(P2_6); GPIO_write(P2_6, 0);
+	GPIO_init(P2_7); GPIO_output(P2_7); GPIO_write(P2_7, 0);
+
+	setleds(0b00000);
+
+	UART_init(UART_RX, UART_TX, APPBAUD);
+
+	setleds(0b01011);
+
+	printf("\n\nBootloader Start\n");
+
+	// give SD card time to wake up
+	//for (volatile int i = (1UL<<12); i; i--);
+	for(int waiting = 0; waiting < 10; waiting++)
+	{
+		printf("waiting %d\n", waiting);
+		delay_loop(1000000);
+		if(waiting & 1)
+			setleds(0b00101);
+		else
+			setleds(0b01010);
+		printf("init SD\n");
+		SDCard_init(P0_9, P0_8, P0_7, P0_6);
+		int sdcard_init = SDCard_disk_initialize();
+		if (sdcard_init == 0)
+		{
+			setleds(0b01100);
+			check_sd_firmware();
+			break;
+		}
+		else
+			printf("init SD FAILED: %d\n", sdcard_init);
+	}
+
+	int dfu = 0;
+	if (isp_btn_pressed() == 0)
+	{
+		printf("ISP button pressed, entering DFU mode\n");
+		setleds(0b00001);
+		dfu = 1;
+	}
+	else if (WDT_ReadTimeOutFlag()) {
+		setleds(0b00010);
+		WDT_ClrTimeOutFlag();
+		printf("WATCHDOG reset, entering DFU mode\n");
+		dfu = 1;
+	} else if (*(uint32_t *)USER_FLASH_START == 0xFFFFFFFF) {
+		setleds(0b00100);
+        printf("User flash empty, enabling DFU\n");
+        dfu = 1;
+    }
+
+	if (dfu)
+		start_dfu();
+
+#ifdef WATCHDOG
+	WDT_Init(WDT_CLKSRC_IRC, WDT_MODE_RESET);
+	WDT_Start(1<<22);
+#endif
+
+	// grab user code reset vector
+// #ifdef DEBUG
+	unsigned *p = (unsigned *)(USER_FLASH_START +4);
+	printf("Jumping to 0x%x\n", *p);
+// #endif
+
+	while (UART_busy());
+	printf("Jump!\n");
+	while (UART_busy());
+	UART_deinit();
+
+	setleds(0b00001);
+	setleds(0b00010);
+	setleds(0b00100);
+	setleds(0b01000);
+	setleds(0b01110);
+	new_execute_user_code();
+
+    UART_init(UART_RX, UART_TX, APPBAUD);
+
+	setleds(0b01111);
+	printf("This should never happen\n");
+
+	while (UART_busy());
+
+	for (volatile int i = (1<<18);i;i--);
+
+	NVIC_SystemReset();
 }

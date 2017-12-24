@@ -53,7 +53,7 @@ RM       = rm -f
 OPTIMIZE = s
 
 #DEBUG_MESSAGES
-CDEFS    = MAX_URI_LENGTH=512 __LPC17XX__ USB_DEVICE_ONLY APPBAUD=$(APPBAUD)
+CDEFS    = MAX_URI_LENGTH=512 __LPC17XX__ USB_DEVICE_ONLY APPBAUD=$(APPBAUD) DEBUG_MESSAGES
 
 FLAGS    = -O$(OPTIMIZE) -mcpu=$(MCU) -mthumb -mthumb-interwork -mlong-calls -ffunction-sections -fdata-sections -Wall -g -funsigned-char -funsigned-bitfields -fpack-struct -fshort-enums
 FLAGS   += $(patsubst %,-I%,$(INC))
