@@ -1,4 +1,6 @@
 
-make &&
-  make CONSOLE=/dev/ttyUSB0 upload  &&
+source ./config.zsh
+
+make APPBAUD=$BAUD &&
+  . ./upload.zsh   &&
   . ./console.zsh

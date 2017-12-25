@@ -1,0 +1,3 @@
+
+CONSOLE=/dev/ttyUSB0
+BAUD=250000

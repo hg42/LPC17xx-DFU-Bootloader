@@ -1,1 +1,6 @@
-tl make CONSOLE=/dev/ttyUSB0 console
+
+source ./config.zsh
+
+#tl make APPBAUD=$BAUD CONSOLE=$CONSOLE console
+
+tl miniterm.py $CONSOLE $BAUD
