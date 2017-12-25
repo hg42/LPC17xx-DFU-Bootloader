@@ -43,7 +43,10 @@
 
 #include "lpc17xx_wdt.h"
 
-#define ISP_BTN	P2_12
+#define PLAY_BTN    P2_12
+#define ISP_BTN	    P2_10
+
+#define DFU_BTN     PLAY_BTN
 
 #ifndef DEBUG_MESSAGES
 #define printf(...) do {} while (0)
@@ -74,9 +77,9 @@ void setleds(int leds)
 	delay_loop(1000000);
 }
 
-int isp_btn_pressed(void)
+int dfu_btn_pressed(void)
 {
-	return GPIO_get(ISP_BTN);
+	return GPIO_get(DFU_BTN);
 }
 
 void start_dfu(void)
@@ -233,7 +236,7 @@ int main(void)
 {
 	WDT_Feed();
 
-	GPIO_init(ISP_BTN); GPIO_input(ISP_BTN);
+	GPIO_init(DFU_BTN); GPIO_input(DFU_BTN);
 
 	GPIO_init(LED1); GPIO_output(LED1);
 	GPIO_init(LED2); GPIO_output(LED2);
@@ -279,7 +282,7 @@ int main(void)
 	}
 
 	int dfu = 0;
-	if (isp_btn_pressed() == 0)
+	if (dfu_btn_pressed() == 0)
 	{
 		printf("ISP button pressed, entering DFU mode\n");
 		setleds(0b00001);
