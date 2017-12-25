@@ -73,7 +73,7 @@ void setleds(int leds)
 	GPIO_write(LED2, leds &  2);
 	GPIO_write(LED3, leds &  4);
 	GPIO_write(LED4, leds &  8);
-	GPIO_write(LED5, leds & 16);
+	GPIO_write(LED5, ! (leds & 16));
 	delay_loop(1000000);
 }
 
