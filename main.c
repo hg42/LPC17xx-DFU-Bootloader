@@ -99,7 +99,7 @@ void check_sd_firmware(void)
 	f_mount(0, &fat);
 	if ((r = f_open(&file, firmware_file, FA_READ)) == FR_OK)
 	{
-		setleds(0b01111);
+		setleds(0b11111);
  		printf("Flashing firmware...\n");
 		uint8_t buf[512];
 		unsigned int r = sizeof(buf);
@@ -114,7 +114,7 @@ void check_sd_firmware(void)
 			}
 
 			//setleds((address - USER_FLASH_START) >> 15);
-			setleds(++count);
+			setleds(0b10000 + (++count % 0b1111));
 
  			//printf("\t0x%lx\n", address);
 
@@ -250,30 +250,30 @@ int main(void)
 	GPIO_init(P2_6); GPIO_output(P2_6); GPIO_write(P2_6, 0);
 	GPIO_init(P2_7); GPIO_output(P2_7); GPIO_write(P2_7, 0);
 
-	setleds(0b00000);
+	setleds(0b10000);
 
 	UART_init(UART_RX, UART_TX, APPBAUD);
 
-	setleds(0b01011);
+	setleds(0b11011);
 
 	printf("\n\nBootloader Start\n");
 
 	// give SD card time to wake up
 	//for (volatile int i = (1UL<<12); i; i--);
-	for(int waiting = 0; waiting < 10; waiting++)
+	for(int waiting = 1; waiting <= 4; waiting++)
 	{
-		printf("waiting %d\n", waiting);
-		delay_loop(1000000);
+		printf("waiting %d %d\n", waiting, dfu_btn_pressed());
+		//delay_loop(1000000);
 		if(waiting & 1)
-			setleds(0b00101);
+			setleds(0b10101);
 		else
-			setleds(0b01010);
+			setleds(0b11010);
 		printf("init SD\n");
 		SDCard_init(P0_9, P0_8, P0_7, P0_6);
 		int sdcard_init = SDCard_disk_initialize();
 		if (sdcard_init == 0)
 		{
-			setleds(0b01100);
+			setleds(0b11100);
 			check_sd_firmware();
 			break;
 		}
@@ -285,19 +285,19 @@ int main(void)
 	if (dfu_btn_pressed() == 0)
 	{
 		printf("ISP button pressed, entering DFU mode\n");
-		setleds(0b00001);
+		setleds(0b10001);
 		dfu = 1;
 	}
 	else if (WDT_ReadTimeOutFlag()) {
-		setleds(0b00010);
+		setleds(0b10010);
 		WDT_ClrTimeOutFlag();
 		printf("WATCHDOG reset, entering DFU mode\n");
 		dfu = 1;
 	} else if (*(uint32_t *)USER_FLASH_START == 0xFFFFFFFF) {
-		setleds(0b00100);
-        printf("User flash empty, enabling DFU\n");
-        dfu = 1;
-    }
+		setleds(0b10100);
+		printf("User flash empty, enabling DFU\n");
+		dfu = 1;
+	}
 
 	if (dfu)
 		start_dfu();
@@ -318,16 +318,16 @@ int main(void)
 	while (UART_busy());
 	UART_deinit();
 
-	setleds(0b00001);
-	setleds(0b00010);
-	setleds(0b00100);
-	setleds(0b01000);
-	setleds(0b01110);
+	setleds(0b10001);
+	setleds(0b10010);
+	setleds(0b10100);
+	setleds(0b11000);
+	setleds(0b00000);
 	new_execute_user_code();
 
     UART_init(UART_RX, UART_TX, APPBAUD);
 
-	setleds(0b01111);
+	setleds(0b11110);
 	printf("This should never happen\n");
 
 	while (UART_busy());
