@@ -64,6 +64,16 @@ uint32_t busy_buffers;
 int cardtype;
 
 
+static uint32_t delay_loop(uint32_t count)
+{
+	volatile uint32_t j, del;
+	for(j=0; j<count; ++j){
+		del=j; // volatiles, so the compiler will not optimize the loop
+	}
+	return del;
+}
+
+
 #define SD_COMMAND_TIMEOUT 4096
 
 void SDCard_init(PinName mosi, PinName miso, PinName sclk, PinName cs)
@@ -143,14 +153,21 @@ void SDCard_init(PinName mosi, PinName miso, PinName sclk, PinName cs)
 int SDCard_initialise_card() {
     // Set to 25kHz for initialisation, and clock card with cs = 1
     SPI_frequency(25000);
-    GPIO_set(SDCARD_cs);
 
-    for(int i=0; i<100; i++) {
+    GPIO_set(SDCARD_cs);
+    //delay_loop(500000);
+
+    for(int i=0; i<16; i++) {
         SPI_write(0xFF);
     }
 
     // send CMD0, should return with all zeros except IDLE STATE set (bit 0)
-    int idle_init = SDCard__cmd(SDCMD_GO_IDLE_STATE, 0);
+    int idle_init = 0;
+    for(int i=0; i<4; i++) {
+        idle_init = SDCard__cmd(SDCMD_GO_IDLE_STATE, 0);
+        if(idle_init == R1_IDLE_STATE)
+            break;
+    }
     if(idle_init != R1_IDLE_STATE) {
         printf("Could not put SD card in to SPI idle state: %d\n", idle_init);
         return cardtype = SDCARD_FAIL;
@@ -437,16 +454,17 @@ int SDCard__cmd(int cmd, int arg) {
     SPI_write(0x95);
 
     // wait for the repsonse (response[7] == 0)
-    for(int i=0; i<SD_COMMAND_TIMEOUT; i++) {
+    for(int i=0; i<10+0*SD_COMMAND_TIMEOUT; i++) {
         int response = SPI_write(0xFF);
+//                    if(response == 0xFF) {if((i&0xFF) == 0) printf(".");} else printf(" <%u", response);
         if(!(response & 0x80)) {
             GPIO_set(SDCARD_cs);
             SPI_write(0xFF);
-// 			printf(" <%u\n", response);
+//                    printf(" <%u\n", response);
             return response;
         }
     }
-//     printf("Timeout\n");
+     printf("cmd Timeout\n");
 //     SDCARD_cs = 1;
 	GPIO_set(SDCARD_cs);
     SPI_write(0xFF);

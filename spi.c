@@ -29,38 +29,63 @@
 #include "lpc17xx_pinsel.h"
 #include "lpc17xx_ssp.h"
 #include "lpc17xx_gpio.h"
+#include "gpio.h"
 
-#include <stdio.h>
+//#include <stdio.h>
+#include "min-printf.h"
 
-// #define SOFT_SPI
+//#define FORCE_SOFT_SPI
+//#define SOFT_SPI
+
+#ifdef FORCE_SOFT_SPI
+  #ifndef SOFT_SPI
+    #define SOFT_SPI
+  #endif
+#endif
 
 uint32_t delay;
-Pin_t miso;
-Pin_t mosi;
-Pin_t sclk;
-SPI_REG *sspr;
+PinName spi_miso;
+PinName spi_mosi;
+PinName spi_sclk;
+SPI_REG volatile * volatile sspr;
 
+
+static void spi__delay(uint32_t ticks) {
+    for (;ticks;ticks--)
+        asm volatile("nop\n\t");
+}
 
 void SPI_init(PinName mosi, PinName miso, PinName sclk)
 {
+#ifdef FORCE_SOFT_SPI
+    GPIO_setup(sclk); GPIO_output(sclk); spi_sclk = sclk;
+    GPIO_setup(mosi); GPIO_output(mosi); spi_mosi = mosi;
+    GPIO_setup(miso); GPIO_input(miso);  spi_miso = miso;
+#else
+    GPIO_setup(sclk); GPIO_output(sclk); spi_sclk = sclk;
+    GPIO_setup(mosi); GPIO_output(mosi); spi_mosi = mosi;
+    GPIO_setup(miso); GPIO_input(miso);  spi_miso = miso;
 	FIO_SetDir((mosi >> 5) & 7, 1UL << (mosi & 0x1F), 1);
 	FIO_SetDir((miso >> 5) & 7, 1UL << (miso & 0x1F), 0);
 	FIO_SetDir((sclk >> 5) & 7, 1UL << (sclk & 0x1F), 1);
-
     if (mosi == P0_9 && miso == P0_8 && sclk == P0_7)
     {
         // SSP1 on 0.7,0.8,0.9
         sspr = LPC_SSP1;
 //         isr_dispatch[1] = this;
-// 		printf("SPI:Using SSP1\n");
+ 		printf("SPI:Using SSP1\n");
+spi__delay(delay);
 
         LPC_PINCON->PINSEL0 &= ~((3 << (7*2)) | (3 << (8*2)) | (3 << (9*2)));
         LPC_PINCON->PINSEL0 |=  ((2 << (7*2)) | (2 << (8*2)) | (2 << (9*2)));
 
+spi__delay(delay);
         LPC_SC->PCLKSEL0 &= 0xFFCFFFFF;
         LPC_SC->PCLKSEL0 |= 0x00100000;
+spi__delay(delay);
 
         LPC_SC->PCONP |= CLKPWR_PCONP_PCSSP1;
+spi__delay(delay);
     }
     else if (mosi == P0_18 && miso == P0_17 && sclk == P0_15)
     {
@@ -96,16 +121,22 @@ void SPI_init(PinName mosi, PinName miso, PinName sclk)
         LPC_SC->PCONP |= CLKPWR_PCONP_PCSSP0;
     }
     else
+#endif
     {
         sspr = (LPC_SSP_TypeDef *) 0;
     }
 
     if (sspr) {
+spi__delay(delay);
         sspr->CR0 = SSP_DATABIT_8 |
                     SSP_FRAME_SPI;
+spi__delay(delay);
         sspr->CR1 = SSP_MASTER_MODE;
+spi__delay(delay);
         SPI_frequency(10000);
+spi__delay(delay);
         sspr->CR1 |= SSP_CR1_SSP_EN;
+spi__delay(delay);
     }
 }
 
@@ -115,7 +146,7 @@ void SPI_frequency(uint32_t f)
     // CPSR = 2 to 254, even only
     // CR0[8:15] (SCR, 0..255) is a further prescale
 
-//     iprintf("SPI: frequency %lu:", f);
+printf("SPI: frequency %lu:", f);
     delay = 25000000 / f;
     // f = 25MHz / (CPSR . [SCR + 1])
     // CPSR . (SCR + 1) = 25MHz / f
@@ -139,52 +170,60 @@ void SPI_frequency(uint32_t f)
             sspr->CR0 &= 0x00FF;
             sspr->CR0 |= (((delay / sspr->CPSR) - 1) & 0xFF) << 8;
         }
-//         iprintf(" CPSR=%lu, CR0=%lu", sspr->CPSR, sspr->CR0);
+printf(" CPSR=%lu, CR0=%lu", sspr->CPSR, sspr->CR0);
     }
-//     iprintf("\n");
-}
-
-void _delay(uint32_t ticks) {
-    for (;ticks;ticks--)
-        asm volatile("nop\n\t");
+printf("\n");
 }
 
 uint8_t SPI_write(uint8_t data)
 {
 //     _cs = 1;
     uint8_t r = 0;
-//     printf("SPI: >0x%x", data);
     if (sspr) {
+//     printf("SPI: >0x%x ", data);
+spi__delay(100*delay);
         while ((sspr->SR & SSP_SR_TNF) == 0);
+spi__delay(100*delay);
         sspr->DR = data;
+spi__delay(100*delay);
         while ((sspr->SR & SSP_SR_RNE) == 0);
+spi__delay(100*delay);
         r = sspr->DR & 255;
+spi__delay(100*delay);
     }
 #ifdef SOFT_SPI
     else {
+//     printf("SPISOFT: >0x%x", data);
+        uint8_t bits = data;
+#define delay1  (delay >> 1)
         for (int i = 0; i < 8; i++) {
-            FIO_ClearValue(sclk.port, 1UL << sclk.pin);         // clock LOW
+//spi__delay(delay1);
+            GPIO_clear(spi_sclk);               // clock LOW
 
-            if (data & 0x80)                                    // WRITE
-                FIO_SetValue(mosi.port, 1UL << mosi.pin);
+//spi__delay(delay1);
+            if (bits & 0x80)                            // WRITE
+                GPIO_set(spi_mosi);
             else
-                FIO_ClearValue(mosi.port, 1UL << mosi.pin);
-            data <<= 1;
+                GPIO_clear(spi_mosi);
+            bits <<= 1;
 
-            _delay(delay >> 1);                                 // DELAY
+            spi__delay(delay1);                                // DELAY
 
-            FIO_SetValue(sclk.port, 1UL << sclk.pin);           // clock HIGH
+            GPIO_set(spi_sclk);                 // clock HIGH
 
-            _delay(delay >> 1);                                 // DELAY
+            spi__delay(delay1);                                // DELAY
 
             r <<= 1;
-            if (FIO_ReadValue(miso.port) & (1UL << miso.pin))   // READ
+            if (GPIO_get(spi_miso))                     // READ
                 r |= 1;
         }
-        FIO_ClearValue(sclk.port, 1UL << sclk.pin);
+//spi__delay(delay1);
+        GPIO_clear(spi_sclk);                   // clock LOW
+//spi__delay(delay1);
     }
 #endif
-//     printf(" <0x%x\n", r);
+//     if(r == 0xFF) printf(" <0x%x\b\b\b\b\b\b", r); else printf(" <0x%x\n", r);
+//     if(data != 0xFF || r != 0xFF) printf("SPI%s: >0x%x <0x%x\n", sspr?"":"soft", data, r);
     return r;
 }
 

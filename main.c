@@ -95,16 +95,15 @@ void start_dfu(void)
 void check_sd_firmware(void)
 {
 	int r;
- 	printf("Check SD\n");
+// 	printf("Check SD\n");
 	f_mount(0, &fat);
 	if ((r = f_open(&file, firmware_file, FA_READ)) == FR_OK)
 	{
 		setleds(0b11111);
- 		printf("Flashing firmware...\n");
+// 		printf("Flashing firmware...\n");
 		uint8_t buf[512];
 		unsigned int r = sizeof(buf);
 		uint32_t address = USER_FLASH_START;
-		int count = 0;
 		while (r == sizeof(buf))
 		{
 			if (f_read(&file, buf, sizeof(buf), &r) != FR_OK)
@@ -113,8 +112,7 @@ void check_sd_firmware(void)
 				return;
 			}
 
-			//setleds((address - USER_FLASH_START) >> 15);
-			setleds(0b10000 + (++count % 0b1111));
+			setleds(0b10000 | (address - USER_FLASH_START) >> 15);
 
  			//printf("\t0x%lx\n", address);
 
@@ -284,7 +282,7 @@ int main(void)
 	int dfu = 0;
 	if (dfu_btn_pressed() == 0)
 	{
-		printf("ISP button pressed, entering DFU mode\n");
+		printf("button pressed, entering DFU mode\n");
 		setleds(0b10001);
 		dfu = 1;
 	}
