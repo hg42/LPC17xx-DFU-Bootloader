@@ -2,7 +2,8 @@
 #
 #
 
-APPBAUD  = 1000000
+APPBAUD  = 115200
+#APPBAUD  = 1000000
 
 PROJECT  = DFU-Bootloader
 
@@ -55,7 +56,8 @@ OPTIMIZE = s
 #DEBUG_MESSAGES
 CDEFS    = MAX_URI_LENGTH=512 __LPC17XX__ USB_DEVICE_ONLY APPBAUD=$(APPBAUD) DEBUG_MESSAGES
 
-FLAGS    = -O$(OPTIMIZE) -mcpu=$(MCU)
+FLAGS    = -mcpu=$(MCU)
+FLAGS   += -O$(OPTIMIZE)
 FLAGS   += -mthumb -mthumb-interwork
 FLAGS   += -mlong-calls
 FLAGS   += -ffunction-sections -fdata-sections
@@ -65,46 +67,46 @@ FLAGS   += -funsigned-char -funsigned-bitfields -fshort-enums
 FLAGS   += -fpack-struct
 FLAGS   += $(patsubst %,-I%,$(INC))
 FLAGS   += $(patsubst %,-D%,$(CDEFS))
-FLAGS   += -fno-aggressive-loop-optimizations
-FLAGS   += -fno-dce                       # Use the RTL dead code elimination pass.
-FLAGS   += -fno-gcse                      # Perform global common subexpression elimination.
-FLAGS   += -fno-gcse-after-reload         # Perform global common subexpression elimination after register allocation has finished.
-FLAGS   += -fno-gcse-las                  # Perform redundant load after store elimination in global common subexpression elimination.
-FLAGS   += -fno-gcse-lm                   # Perform enhanced load motion during global common subexpression elimination.
-FLAGS   += -fno-gcse-sm                   # Perform store motion after global common subexpression elimination.
-FLAGS   += -fno-ipa-cp                    # Perform interprocedural constant propagation.
-FLAGS   += -fno-ipa-cp-alignment          # Perform alignment discovery and propagation to make Interprocedural constant propagation stronger.
-FLAGS   += -fno-ipa-cp-clone              # Perform cloning to make Interprocedural constant propagation stronger.
-FLAGS   += -fno-ipa-icf                   # Perform Identical Code Folding for functions and read-only variables.
-FLAGS   += -fno-ipa-icf-functions         # Perform Identical Code Folding for functions.
-FLAGS   += -fno-ipa-profile               # Perform interprocedural profile propagation.
-FLAGS   += -fno-ipa-pta                   # Perform interprocedural points-to analysis.
-FLAGS   += -fno-ipa-pure-const            # Discover pure and const functions.
-FLAGS   += -fno-ipa-ra                    # Use caller save register across calls if possible.
-FLAGS   += -fno-ipa-reference             # Discover readonly and non addressable static variables.
-FLAGS   += -fno-ipa-sra                   # Perform interprocedural reduction of aggregates.
-FLAGS   += -fno-ira-hoist-pressure        # Use IRA based register pressure calculation in RTL hoist optimizations.
-FLAGS   += -fno-ira-loop-pressure         # Use IRA based register pressure calculation in RTL loop optimizations.
-FLAGS   += -fno-ira-share-save-slots      # Share slots for saving different hard registers.
-FLAGS   += -fno-ira-share-spill-slots     # Share stack slots for spilled pseudo-registers.
-FLAGS   += -fno-loop-nest-optimize
-FLAGS   += -fno-loop-parallelize-all
-FLAGS   += -fno-move-loop-invariants
-FLAGS   += -fno-peel-loops
-FLAGS   += -fno-prefetch-loop-arrays
-FLAGS   += -fno-reorder-blocks
-FLAGS   += -fno-tree-dse
-FLAGS   += -fno-tree-loop-distribute-patterns # Enable loop distribution for patterns transformed into a library call.
-FLAGS   += -fno-tree-loop-distribution    # Enable loop distribution on trees.
-FLAGS   += -fno-tree-loop-if-convert      # Convert conditional jumps in innermost loops to branchless equivalents.
-FLAGS   += -fno-tree-loop-if-convert-stores # Also if-convert conditional jumps containing memory writes.
-FLAGS   += -fno-tree-loop-im              # Enable loop invariant motion on trees.
-FLAGS   += -fno-tree-loop-ivcanon         # Create canonical induction variables in loops.
-FLAGS   += -fno-tree-loop-optimize
-FLAGS   += -fno-tree-loop-vectorize
-FLAGS   += -fno-unsafe-loop-optimizations
-FLAGS   += -fno-variable-expansion-in-unroller
-FLAGS   += -fstrict-volatile-bitfields
+#FLAGS   += -fno-aggressive-loop-optimizations
+#FLAGS   += -fno-dce                       # Use the RTL dead code elimination pass.
+#FLAGS   += -fno-gcse                      # Perform global common subexpression elimination.
+#FLAGS   += -fno-gcse-after-reload         # Perform global common subexpression elimination after register allocation has finished.
+#FLAGS   += -fno-gcse-las                  # Perform redundant load after store elimination in global common subexpression elimination.
+#FLAGS   += -fno-gcse-lm                   # Perform enhanced load motion during global common subexpression elimination.
+#FLAGS   += -fno-gcse-sm                   # Perform store motion after global common subexpression elimination.
+#FLAGS   += -fno-ipa-cp                    # Perform interprocedural constant propagation.
+#FLAGS   += -fno-ipa-cp-alignment          # Perform alignment discovery and propagation to make Interprocedural constant propagation stronger.
+#FLAGS   += -fno-ipa-cp-clone              # Perform cloning to make Interprocedural constant propagation stronger.
+#FLAGS   += -fno-ipa-icf                   # Perform Identical Code Folding for functions and read-only variables.
+#FLAGS   += -fno-ipa-icf-functions         # Perform Identical Code Folding for functions.
+#FLAGS   += -fno-ipa-profile               # Perform interprocedural profile propagation.
+#FLAGS   += -fno-ipa-pta                   # Perform interprocedural points-to analysis.
+#FLAGS   += -fno-ipa-pure-const            # Discover pure and const functions.
+#FLAGS   += -fno-ipa-ra                    # Use caller save register across calls if possible.
+#FLAGS   += -fno-ipa-reference             # Discover readonly and non addressable static variables.
+#FLAGS   += -fno-ipa-sra                   # Perform interprocedural reduction of aggregates.
+#FLAGS   += -fno-ira-hoist-pressure        # Use IRA based register pressure calculation in RTL hoist optimizations.
+#FLAGS   += -fno-ira-loop-pressure         # Use IRA based register pressure calculation in RTL loop optimizations.
+#FLAGS   += -fno-ira-share-save-slots      # Share slots for saving different hard registers.
+#FLAGS   += -fno-ira-share-spill-slots     # Share stack slots for spilled pseudo-registers.
+#FLAGS   += -fno-loop-nest-optimize
+#FLAGS   += -fno-loop-parallelize-all
+#FLAGS   += -fno-move-loop-invariants
+#FLAGS   += -fno-peel-loops
+#FLAGS   += -fno-prefetch-loop-arrays
+#FLAGS   += -fno-reorder-blocks
+#FLAGS   += -fno-tree-dse
+#FLAGS   += -fno-tree-loop-distribute-patterns # Enable loop distribution for patterns transformed into a library call.
+#FLAGS   += -fno-tree-loop-distribution    # Enable loop distribution on trees.
+#FLAGS   += -fno-tree-loop-if-convert      # Convert conditional jumps in innermost loops to branchless equivalents.
+#FLAGS   += -fno-tree-loop-if-convert-stores # Also if-convert conditional jumps containing memory writes.
+#FLAGS   += -fno-tree-loop-im              # Enable loop invariant motion on trees.
+#FLAGS   += -fno-tree-loop-ivcanon         # Create canonical induction variables in loops.
+#FLAGS   += -fno-tree-loop-optimize
+#FLAGS   += -fno-tree-loop-vectorize
+#FLAGS   += -fno-unsafe-loop-optimizations
+#FLAGS   += -fno-variable-expansion-in-unroller
+#FLAGS   += -fstrict-volatile-bitfields
 
 CFLAGS   = $(FLAGS) -std=gnu99 -pipe -fno-builtin-printf -fno-builtin-fprintf -fno-builtin-vfprintf -fno-builtin-puts
 ASFLAGS  = $(FLAGS)

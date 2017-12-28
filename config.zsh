@@ -1,3 +1,4 @@
 
-CONSOLE=/dev/ttyUSB0
+CONSOLE=$(echo /dev/ttyUSB*(N))
 BAUD=250000
+#BAUD=115200

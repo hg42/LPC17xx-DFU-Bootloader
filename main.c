@@ -95,7 +95,7 @@ void start_dfu(void)
 void check_sd_firmware(void)
 {
 	int r;
-// 	printf("Check SD\n");
+ 	printf("Check SD\n");
 	f_mount(0, &fat);
 	if ((r = f_open(&file, firmware_file, FA_READ)) == FR_OK)
 	{
@@ -260,7 +260,7 @@ int main(void)
 	//for (volatile int i = (1UL<<12); i; i--);
 	for(int waiting = 1; waiting <= 4; waiting++)
 	{
-		printf("waiting %d %d\n", waiting, dfu_btn_pressed());
+		//printf("waiting %d %d\n", waiting, dfu_btn_pressed());
 		//delay_loop(1000000);
 		if(waiting & 1)
 			setleds(0b10101);
@@ -268,15 +268,14 @@ int main(void)
 			setleds(0b11010);
 		printf("init SD\n");
 		SDCard_init(P0_9, P0_8, P0_7, P0_6);
-		int sdcard_init = SDCard_disk_initialize();
-		if (sdcard_init == 0)
+		if (SDCard_disk_initialize() == 0)
 		{
 			setleds(0b11100);
 			check_sd_firmware();
 			break;
 		}
 		else
-			printf("init SD FAILED: %d\n", sdcard_init);
+			printf("init SD FAILED\n");
 	}
 
 	int dfu = 0;

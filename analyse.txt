@@ -1,22 +1,16 @@
-4.9.3
 
-SPI: >0x40 <0xFF
-SPI: >0x0 <0xFF
-SPI: >0x0 <0xFF
-SPI: >0x0 <0xFF
-SPI: >0x0 <0xFF
-SPI: >0x95 <0xFF
-SPI: >0xFF <0x1
+4.9.3 old clock:
 
-6.3
+spi: f=25000 sspclk=25000000 delay=1000 CPSR=232 CRf=4 -> 26939
+spi: f=1000000 sspclk=25000000 delay=25 CPSR=24 CRf=1 -> 1041666
 
-SPI: >0x40 <0xFF
-SPI: >0x0 <0xFF
-SPI: >0x0 <0xFF
-SPI: >0x0 <0xFF
-SPI: >0x0 <0xFF
-SPI: >0x95 <0xFF
-SPI: >0xFF <0xFF
-SPI: >0xFF <0xFF
-SPI: >0xFF <0xFF
-...
+4.9.3 SSPR_Clock:
+
+spi: f=25000 sspclk=25000000 delay=1000 CPSR=4 CRf=250 -> 25000
+spi: f=1000000 sspclk=25000000 delay=25 CPSR=2 CRf=13 -> 961538
+
+6.3.1 SSPR_Clock:
+
+spi: f=25000 sspclk=25000000 delay=1000 CPSR=4 CRf=250 -> 25000
+spi: f=1000000 sspclk=25000000 delay=25 CPSR=2 CRf=13 -> 961538
+

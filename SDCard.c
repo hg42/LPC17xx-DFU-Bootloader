@@ -33,9 +33,9 @@ int SDCard__cmd(int cmd, int arg);
 int SDCard__cmdx(int cmd, int arg);
 int SDCard__cmd8(void);
 int SDCard__cmd58(uint32_t *);
-int SDCard_initialise_card(void);
-int SDCard_initialise_card_v1(void);
-int SDCard_initialise_card_v2(void);
+int SDCard_init_card(void);
+int SDCard_init_card_v1(void);
+int SDCard_init_card_v2(void);
 
 int SDCard__read(uint8_t *buffer, int length);
 int SDCard__write(const uint8_t *buffer, int length);
@@ -49,36 +49,25 @@ int SDCard__write(const uint8_t *buffer, int length);
 // int check_buffer(uint8_t *, int);
 // int end_multi_read(void);
 
-uint32_t SDCard__sd_sectors(void);
-uint32_t _sectors;
+static uint32_t SDCard__sd_sectors(void);
+static uint32_t sdcard_sectors;
 
 // SPI _spi;
-PinName SDCARD_cs;
+static PinName SDCARD_cs;
 
-int busyflags;
-// DMA *write_dma;
-// DMA *read_dma;
+//static int busyflags;
+//static DMA *write_dma;
+//static DMA *read_dma;
+//static uint32_t busy_buffers;
 
-uint32_t busy_buffers;
-
-int cardtype;
-
-
-static uint32_t delay_loop(uint32_t count)
-{
-	volatile uint32_t j, del;
-	for(j=0; j<count; ++j){
-		del=j; // volatiles, so the compiler will not optimize the loop
-	}
-	return del;
-}
+static int cardtype;
 
 
 #define SD_COMMAND_TIMEOUT 4096
 
 void SDCard_init(PinName mosi, PinName miso, PinName sclk, PinName cs)
 {
-  SPI_init(mosi, miso, sclk);
+  SPI_init(mosi, miso, sclk, 0);
   GPIO_init(cs);
   GPIO_output(cs);
   GPIO_set(cs);
@@ -150,91 +139,105 @@ void SDCard_init(PinName mosi, PinName miso, PinName sclk, PinName cs)
 #define fprintf(...) do {} while (0)
 // #define fputs(...) do {} while (0)
 
-int SDCard_initialise_card() {
+static uint32_t delay_loop(uint32_t count)
+{
+	volatile uint32_t j, del;
+	for(j=0; j<count; ++j){
+		del=j; // volatiles, so the compiler will not optimize the loop
+	}
+	return del;
+}
+
+int SDCard_init_card() {
     // Set to 25kHz for initialisation, and clock card with cs = 1
+
     SPI_frequency(25000);
 
     GPIO_set(SDCARD_cs);
-    //delay_loop(500000);
 
-    for(int i=0; i<16; i++) {
+    #if 0
+    for(int i_ff=0; i_ff<24; i_ff++) {
+        SPI_write(0xFF) == 0xFF)
+            break;
+    }
+    #else
+    for(int i_ff=0; i_ff<24; i_ff++) {
         SPI_write(0xFF);
     }
+    #endif
 
     // send CMD0, should return with all zeros except IDLE STATE set (bit 0)
     int idle_init = 0;
-    for(int i=0; i<4; i++) {
+    for(int i_cmd0=0; i_cmd0<10; i_cmd0++) {
         idle_init = SDCard__cmd(SDCMD_GO_IDLE_STATE, 0);
         if(idle_init == R1_IDLE_STATE)
             break;
     }
     if(idle_init != R1_IDLE_STATE) {
-        printf("Could not put SD card in to SPI idle state: %d\n", idle_init);
+        printf("No idle state after CMD0: 0x%x\n", idle_init);
         return cardtype = SDCARD_FAIL;
     }
 
     // send CMD8 to determine whther it is ver 2.x
     int r = SDCard__cmd8();
     if(r == R1_IDLE_STATE) {
- 		printf("Looks like a SDHC Card\n");
-		return SDCard_initialise_card_v2();
+        printf("Looks like SDHC Card\n");
+        return SDCard_init_card_v2();
     } else if(r == (R1_IDLE_STATE | R1_ILLEGAL_COMMAND)) {
-		return SDCard_initialise_card_v1();
+        return SDCard_init_card_v1();
     } else {
-        printf("Not in idle state after sending CMD8 (not an SD card?)\n");
+        printf("No idle state after CMD8 (not an SD card?)\n");
         return cardtype = SDCARD_FAIL;
     }
 }
 
-int SDCard_initialise_card_v1() {
+int SDCard_init_card_v1() {
     for(int i=0; i<SD_COMMAND_TIMEOUT; i++) {
-		SDCard__cmd(SDCMD_APP_CMD, 0);
-		if(SDCard__cmd(SD_ACMD_SD_SEND_OP_COND, 0) == 0) {
+        SDCard__cmd(SDCMD_APP_CMD, 0);
+        if(SDCard__cmd(SD_ACMD_SD_SEND_OP_COND, 0) == 0) {
             return cardtype = SDCARD_V1;
         }
     }
-
-    printf("Timeout waiting for v1.x card\n");
+    printf("Timeout for v1.x card\n");
     return SDCARD_FAIL;
 }
 
-int SDCard_initialise_card_v2() {
+int SDCard_init_card_v2() {
     for(int i=0; i<SD_COMMAND_TIMEOUT; i++) {
         SDCard__cmd(SDCMD_APP_CMD, 0);
-		if(SDCard__cmd(SD_ACMD_SD_SEND_OP_COND, (1UL<<30)) == 0) {
-			uint32_t ocr;
-			SDCard__cmd58(&ocr);
-			if (ocr & (1UL<<30))
-				return cardtype = SDCARD_V2HC;
-			else
-				return cardtype = SDCARD_V2;
-		}
+        if(SDCard__cmd(SD_ACMD_SD_SEND_OP_COND, (1UL<<30)) == 0) {
+            uint32_t ocr;
+            SDCard__cmd58(&ocr);
+            if (ocr & (1UL<<30))
+                return cardtype = SDCARD_V2HC;
+            else
+                return cardtype = SDCARD_V2;
+        }
     }
-
-    printf("Timeout waiting for v2.x card\n");
+    printf("Timeout for v2.x card\n");
     return cardtype = SDCARD_FAIL;
 }
 
 int SDCard_disk_initialize()
 {
-    _sectors = 0;
+    sdcard_sectors = 0;
 
-    int i = SDCard_initialise_card();
+    int i = SDCard_init_card();
 
     if (i == 0) {
         return 1;
     }
 
-    _sectors = SDCard__sd_sectors();
+    sdcard_sectors = SDCard__sd_sectors();
 
     // Set block length to 512 (CMD16)
-	if(SDCard__cmd(SDCMD_SET_BLOCKLEN, 512) != 0) {
+    if(SDCard__cmd(SDCMD_SET_BLOCKLEN, 512) != 0) {
         printf("Set 512-byte block timed out\n");
         return 1;
     }
 
-//     SPI_frequency(1000000); // Set to 1MHz for data transfer
-    SPI_frequency(4000000); // Set to 4MHz for data transfer
+    SPI_frequency(1000000); // Set to 1MHz for data transfer
+    //SPI_frequency(4000000); // Set to 4MHz for data transfer
     return 0;
 }
 
@@ -265,16 +268,16 @@ int SDCard_disk_read(uint8_t *buffer, uint32_t block_number)
 
 int SDCard_disk_erase(uint32_t block_number, int count)
 {
-	return -1;
+    return -1;
 }
 
-int SDCard_disk_status() { return (_sectors > 0)?0:1; }
+int SDCard_disk_status() { return (sdcard_sectors > 0)?0:1; }
 int SDCard_disk_sync() {
     // TODO: wait for DMA, wait for card not busy
     return 0;
 }
-uint32_t SDCard_disk_sectors() { return _sectors; }
-uint64_t SDCard_disk_size() { return ((uint64_t) _sectors) << 9; }
+uint32_t SDCard_disk_sectors() { return sdcard_sectors; }
+uint64_t SDCard_disk_size() { return ((uint64_t) sdcard_sectors) << 9; }
 uint32_t SDCard_disk_blocksize() { return (1<<9); }
 // int SDCard_disk_canDMA() { return SPI_can_DMA(); }
 //
@@ -439,11 +442,11 @@ uint32_t SDCard_disk_blocksize() { return (1<<9); }
 
 // PRIVATE FUNCTIONS
 
-int SDCard__cmd(int cmd, int arg) {
-//     SDCARD_cs = 0;
-	GPIO_clear(SDCARD_cs);
+int SDCard__cmd(int cmd, int arg)
+{
+    GPIO_clear(SDCARD_cs);
 
-// 	printf("SDCMD:%u ", cmd);
+    //printf("SDCMD:%u\n", cmd);
 
     // send a command
     SPI_write(0x40 | cmd);
@@ -464,19 +467,19 @@ int SDCard__cmd(int cmd, int arg) {
             return response;
         }
     }
-     printf("cmd Timeout\n");
-//     SDCARD_cs = 1;
-	GPIO_set(SDCARD_cs);
+     //printf("cmd Timeout\n");
+    GPIO_set(SDCARD_cs);
     SPI_write(0xFF);
     return -1; // timeout
 }
-int SDCard__cmdx(int cmd, int arg) {
-//     SDCARD_cs = 0;
-	GPIO_clear(SDCARD_cs);
+
+int SDCard__cmdx(int cmd, int arg)
+{
+    GPIO_clear(SDCARD_cs);
 
 // 	printf("SDCMDx:%u ", cmd);
 
-	// send a command
+    // send a command
     SPI_write(0x40 | cmd);
     SPI_write(arg >> 24);
     SPI_write(arg >> 16);
@@ -493,16 +496,15 @@ int SDCard__cmdx(int cmd, int arg) {
         }
     }
 //     printf("Timeout\n");
-//     SDCARD_cs = 1;
-	GPIO_set(SDCARD_cs);
+    GPIO_set(SDCARD_cs);
     SPI_write(0xFF);
     return -1; // timeout
 }
 
 
-int SDCard__cmd58(uint32_t *ocr) {
-//     SDCARD_cs = 0;
-	GPIO_clear(SDCARD_cs);
+int SDCard__cmd58(uint32_t *ocr)
+{
+    GPIO_clear(SDCARD_cs);
     int arg = 0;
 
     // send a command
@@ -522,21 +524,19 @@ int SDCard__cmd58(uint32_t *ocr) {
             *ocr |= SPI_write(0xFF) << 8;
             *ocr |= SPI_write(0xFF) << 0;
 //            printf("OCR = 0x%08X\n", *ocr);
-//             SDCARD_cs = 1;
-			GPIO_set(SDCARD_cs);
+            GPIO_set(SDCARD_cs);
             SPI_write(0xFF);
             return response;
         }
     }
-//     SDCARD_cs = 1;
-	GPIO_set(SDCARD_cs);
+    GPIO_set(SDCARD_cs);
     SPI_write(0xFF);
     return -1; // timeout
 }
 
-int SDCard__cmd8() {
-//     SDCARD_cs = 0;
-	GPIO_clear(SDCARD_cs);
+int SDCard__cmd8()
+{
+    GPIO_clear(SDCARD_cs);
 
     // send a command
     SPI_write(0x40 | SDCMD_SEND_IF_COND); // CMD8
@@ -551,24 +551,22 @@ int SDCard__cmd8() {
         char response[5];
         response[0] = SPI_write(0xFF);
         if(!(response[0] & 0x80)) {
-                for(int j=1; j<5; j++) {
-                    response[j] = SPI_write(0xFF);
-                }
-//                 SDCARD_cs = 1;
-				GPIO_set(SDCARD_cs);
-                SPI_write(0xFF);
-                return response[0];
+            for(int j=1; j<5; j++) {
+                response[j] = SPI_write(0xFF);
+            }
+            GPIO_set(SDCARD_cs);
+            SPI_write(0xFF);
+            return response[0];
         }
     }
-//     SDCARD_cs = 1;
-	GPIO_set(SDCARD_cs);
+    GPIO_set(SDCARD_cs);
     SPI_write(0xFF);
     return -1; // timeout
 }
 
-int SDCard__read(uint8_t *buffer, int length) {
-//     SDCARD_cs = 0;
-	GPIO_clear(SDCARD_cs);
+int SDCard__read(uint8_t *buffer, int length)
+{
+    GPIO_clear(SDCARD_cs);
 
     // read until start byte (0xFF)
     while(SPI_write(0xFF) != 0xFE);
@@ -580,15 +578,14 @@ int SDCard__read(uint8_t *buffer, int length) {
     SPI_write(0xFF); // checksum
     SPI_write(0xFF);
 
-//     SDCARD_cs = 1;
-	GPIO_set(SDCARD_cs);
+    GPIO_set(SDCARD_cs);
     SPI_write(0xFF);
     return 0;
 }
 
-int SDCard__write(const uint8_t *buffer, int length) {
-//     SDCARD_cs = 0;
-	GPIO_clear(SDCARD_cs);
+int SDCard__write(const uint8_t *buffer, int length)
+{
+    GPIO_clear(SDCARD_cs);
 
     // indicate start of block
     SPI_write(0xFE);
@@ -604,8 +601,7 @@ int SDCard__write(const uint8_t *buffer, int length) {
 
     // check the repsonse token
     if((SPI_write(0xFF) & 0x1F) != 0x05) {
-//         SDCARD_cs = 1;
-		GPIO_set(SDCARD_cs);
+        GPIO_set(SDCARD_cs);
         SPI_write(0xFF);
         return 1;
     }
@@ -614,8 +610,7 @@ int SDCard__write(const uint8_t *buffer, int length) {
     while(SPI_write(0xFF) == 0)
         ;
 
-//     SDCARD_cs = 1;
-	GPIO_set(SDCARD_cs);
+    GPIO_set(SDCARD_cs);
     SPI_write(0xFF);
     return 0;
 }
@@ -638,13 +633,13 @@ uint32_t SDCard__sd_sectors()
 {
     // CMD9, Response R2 (R1 byte + 16-byte block read)
     if(SDCard__cmdx(SDCMD_SEND_CSD, 0) != 0) {
-        printf("Didn't get a response from the disk\n");
+        printf("No response from the disk\n");
         return 0;
     }
 
     uint8_t csd[16];
     if(SDCard__read(csd, 16) != 0) {
-        printf("Couldn't read csd response from disk\n");
+        printf("No csd response from disk\n");
         return 0;
     }
 
@@ -658,46 +653,46 @@ uint32_t SDCard__sd_sectors()
     printf("CSD_STRUCT = %lu\n", csd_structure);
 
     if (csd_structure == 0)
-	{
-		if (cardtype == SDCARD_V2HC)
-		{
- 			printf("SDHC card with regular SD descriptor!\n");
-			return 0;
-		}
-		uint32_t c_size = ext_bits(csd, 73, 62);
-		uint32_t c_size_mult = ext_bits(csd, 49, 47);
-		uint32_t read_bl_len = ext_bits(csd, 83, 80);
+    {
+        if (cardtype == SDCARD_V2HC)
+        {
+            printf("SDHC card with regular SD descriptor!\n");
+            return 0;
+        }
+        uint32_t c_size = ext_bits(csd, 73, 62);
+        uint32_t c_size_mult = ext_bits(csd, 49, 47);
+        uint32_t read_bl_len = ext_bits(csd, 83, 80);
 
-		uint32_t block_len = 1 << read_bl_len;
-		uint32_t mult = 1 << (c_size_mult + 2);
-		uint32_t blocknr = (c_size + 1) * mult;
+        uint32_t block_len = 1 << read_bl_len;
+        uint32_t mult = 1 << (c_size_mult + 2);
+        uint32_t blocknr = (c_size + 1) * mult;
 
-		if (block_len >= 512) return blocknr * (block_len >> 9);
-		else return (blocknr * block_len) >> 9;
-	}
-	else if (csd_structure == 1)
-	{
-		if (cardtype != SDCARD_V2HC)
-		{
- 			printf("SD V1 or V2 card with SDHC descriptor!\n");
-			return 0;
-		}
-		uint32_t c_size = ext_bits(csd, 69, 48);
-		uint32_t blocknr = (c_size + 1) * 1024;
+        if (block_len >= 512) return blocknr * (block_len >> 9);
+        else return (blocknr * block_len) >> 9;
+    }
+    else if (csd_structure == 1)
+    {
+        if (cardtype != SDCARD_V2HC)
+        {
+            printf("SD V1 or V2 card with SDHC descriptor!\n");
+            return 0;
+        }
+        uint32_t c_size = ext_bits(csd, 69, 48);
+        uint32_t blocknr = (c_size + 1) * 1024;
 
-		return blocknr;
-	}
-	else
-	{
-		printf("Invalid CSD %lu\n", csd_structure);
+        return blocknr;
+    }
+    else
+    {
+        printf("Invalid CSD %lu\n", csd_structure);
         return 0;
     }
 
-    // memory capacity = BLOCKNR * BLOCK_LEN
-    // where
-    //  BLOCKNR = (C_SIZE+1) * MULT
-    //  MULT = 2^(C_SIZE_MULT+2) (C_SIZE_MULT < 8)
-    //  BLOCK_LEN = 2^READ_BL_LEN, (READ_BL_LEN < 12)
+// memory capacity = BLOCKNR * BLOCK_LEN
+// where
+//  BLOCKNR = (C_SIZE+1) * MULT
+//  MULT = 2^(C_SIZE_MULT+2) (C_SIZE_MULT < 8)
+//  BLOCK_LEN = 2^READ_BL_LEN, (READ_BL_LEN < 12)
 
 //     uint32_t block_len = 1 << read_bl_len;
 //     uint32_t mult = 1 << (c_size_mult + 2);

@@ -8,7 +8,8 @@
 #include "pins.h"
 
 
-void SPI_init(PinName mosi, PinName miso, PinName sclk);
+void SPI_reinit(int force_soft_spi);
+void SPI_init(PinName mosi, PinName miso, PinName sclk, int force_soft_spi);
 
 void SPI_frequency(uint32_t);
 uint8_t SPI_write(uint8_t);

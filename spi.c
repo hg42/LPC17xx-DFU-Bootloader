@@ -28,116 +28,366 @@
 #include "lpc17xx_clkpwr.h"
 #include "lpc17xx_pinsel.h"
 #include "lpc17xx_ssp.h"
-#include "lpc17xx_gpio.h"
+//#include "lpc17xx_gpio.h"
 #include "gpio.h"
 
-//#include <stdio.h>
 #include "min-printf.h"
 
-//#define FORCE_SOFT_SPI
-//#define SOFT_SPI
+#include "lpc17xx_spi.h"
+#include "lpc17xx_clkpwr.h"
+//#include "lpc17xx_libcfg_default.h"
 
-#ifdef FORCE_SOFT_SPI
-  #ifndef SOFT_SPI
-    #define SOFT_SPI
-  #endif
+uint32_t ssp_clk = 0;
+
+#define USE_NEW_freq    1
+#define USE_NEW_init    1
+#define USE_NEW_write   1
+#define USE_NEW_write_read_until_rx_empty  1
+#define USE_NEW_write_wait_tx_not_full     1
+#define USE_NEW_write_overrun_exit         1
+
+
+#if USE_NEW_freq
+/*********************************************************************//**
+ * @brief 		Setup clock rate for SSP device
+ * @param[in] 	SSPx	SSP peripheral definition, should be:
+ * 						- LPC_SSP0: SSP0 peripheral
+ * 						- LPC_SSP1: SSP1 peripheral
+ * @param[in]	target_clock : clock of SSP (Hz)
+ * @return 		None
+ ***********************************************************************/
+static void SSP_SetClock (LPC_SSP_TypeDef *SSPx, uint32_t target_clock)
+{
+    uint32_t prescale, cr0_div, cmp_clk; //, ssp_clk;
+
+    //CHECK_PARAM(PARAM_SSPx(SSPx));
+
+    /* The SSP clock is derived from the (main system oscillator / 2),
+       so compute the best divider from that clock */
+    //if (SSPx == LPC_SSP0){
+    //	ssp_clk = CLKPWR_GetPCLK (CLKPWR_PCLKSEL_SSP0);
+    //} else if (SSPx == LPC_SSP1) {
+    	ssp_clk = CLKPWR_GetPCLK (CLKPWR_PCLKSEL_SSP1);
+
+    //} else {
+    //	return;
+    //}
+
+    /* Find closest divider to get at or under the target frequency.
+       Use smallest prescale possible and rely on the divider to get
+       the closest target frequency */
+    cr0_div = 0;
+    cmp_clk = 0xFFFFFFFF;
+    prescale = 2;
+    while (cmp_clk > target_clock)
+    {
+        cmp_clk = ssp_clk / ((cr0_div + 1) * prescale);
+        if (cmp_clk > target_clock)
+        {
+            cr0_div++;
+            if (cr0_div > 0xFF)
+            {
+                cr0_div = 0;
+                prescale += 2;
+            }
+        }
+    }
+
+    /* Write computed prescaler and divider back to register */
+    SSPx->CR0 &= (~SSP_CR0_SCR(0xFF)) & SSP_CR0_BITMASK;
+    SSPx->CR0 |= (SSP_CR0_SCR(cr0_div)) & SSP_CR0_BITMASK;
+    SSPx->CPSR = prescale & SSP_CPSR_BITMASK;
+}
 #endif
 
-uint32_t delay;
-PinName spi_miso;
-PinName spi_mosi;
-PinName spi_sclk;
-SPI_REG volatile * volatile sspr;
+#if USE_NEW_init
+/********************************************************************//**
+ * @brief		Initializes the SSPx peripheral according to the specified
+*               parameters in the SSP_ConfigStruct.
+ * @param[in]	SSPx	SSP peripheral selected, should be:
+ * 				 		- LPC_SSP0: SSP0 peripheral
+ * 						- LPC_SSP1: SSP1 peripheral
+ * @param[in]	SSP_ConfigStruct Pointer to a SSP_CFG_Type structure
+*                    that contains the configuration information for the
+*                    specified SSP peripheral.
+ * @return 		None
+ *********************************************************************/
+void SSP_Init(LPC_SSP_TypeDef *SSPx, SSP_CFG_Type *SSP_ConfigStruct)
+{
+    uint32_t tmp;
 
+    //CHECK_PARAM(PARAM_SSPx(SSPx));
+
+    //if(SSPx == LPC_SSP0) {
+    //    /* Set up clock and power for SSP0 module */
+    //    CLKPWR_ConfigPPWR (CLKPWR_PCONP_PCSSP0, ENABLE);
+    //} else if(SSPx == LPC_SSP1) {
+        /* Set up clock and power for SSP1 module */
+        CLKPWR_ConfigPPWR (CLKPWR_PCONP_PCSSP1, ENABLE);
+    //} else {
+    //    return;
+    //}
+
+    /* Configure SSP, interrupt is disable, LoopBack mode is disable,
+     * SSP is disable, Slave output is disable as default
+     */
+    tmp = ((SSP_ConfigStruct->CPHA) | (SSP_ConfigStruct->CPOL) \
+            | (SSP_ConfigStruct->FrameFormat) | (SSP_ConfigStruct->Databit))
+            & SSP_CR0_BITMASK;
+    // write back to SSP control register
+    SSPx->CR0 = tmp;
+
+    tmp = SSP_ConfigStruct->Mode & SSP_CR1_BITMASK;
+    // Write back to CR1
+    SSPx->CR1 = tmp;
+
+    // Set clock rate for SSP peripheral
+    SSP_SetClock(SSPx, SSP_ConfigStruct->ClockRate);
+}
+#endif
+
+#if USE_NEW_write
+/*********************************************************************//**
+ * @brief		Transmit a single data through SSPx peripheral
+ * @param[in]	SSPx	SSP peripheral selected, should be:
+ * 						- LPC_SSP0: SSP0 peripheral
+ * 						- LPC_SSP1: SSP1 peripheral
+ * @param[in]	Data	Data to transmit (must be 16 or 8-bit long,
+ * 						this depend on SSP data bit number configured)
+ * @return 		none
+ **********************************************************************/
+void SSP_SendData(LPC_SSP_TypeDef* SSPx, uint16_t Data)
+{
+    //CHECK_PARAM(PARAM_SSPx(SSPx));
+
+    SSPx->DR = SSP_DR_BITMASK(Data);
+}
+
+
+
+/*********************************************************************//**
+ * @brief		Receive a single data from SSPx peripheral
+ * @param[in]	SSPx	SSP peripheral selected, should be
+ * 						- LPC_SSP0: SSP0 peripheral
+ * 						- LPC_SSP1: SSP1 peripheral
+ * @return 		Data received (16-bit long)
+ **********************************************************************/
+uint16_t SSP_ReceiveData(LPC_SSP_TypeDef* SSPx)
+{
+    //CHECK_PARAM(PARAM_SSPx(SSPx));
+
+    return ((uint16_t) (SSP_DR_BITMASK(SSPx->DR)));
+}
+
+uint8_t SSP_Poll8 (LPC_SSP_TypeDef *SSPx, uint8_t wdata8)
+{
+    uint32_t stat;
+    uint32_t tmp;
+
+    #if USE_NEW_write_read_until_rx_empty
+    /* Clear all remaining data in RX FIFO */
+    while (SSPx->SR & SSP_SR_RNE){
+        tmp = (uint32_t) SSP_ReceiveData(SSPx);
+        printf("= 0x%lx\n", tmp);
+    }
+    #endif
+
+    // Clear status
+    SSPx->ICR = SSP_ICR_BITMASK;
+
+    #if USE_NEW_write_wait_tx_not_full
+    //while (!(SSPx->SR & SSP_SR_TNF)) ;
+    while(1)
+    {
+        uint32_t SR = SSPx->SR;
+        //printf("/ 0x%lx\n", SR);
+        if ((SR & SSP_SR_TNF) != 0)
+            break;
+    }
+    #endif
+
+    SSP_SendData(SSPx, wdata8);
+
+    #if USE_NEW_write_overrun_exit
+    // Check overrun error
+    if ((stat = SSPx->RIS) & SSP_RIS_ROR){
+        return (-1);
+    }
+    #endif
+
+    // Check for any data available in RX FIFO
+    //while (!(SSPx->SR & SSP_SR_RNE)) ;
+    while(1)
+    {
+        uint32_t SR = SSPx->SR;
+        //printf("\\ 0x%lx\n", SR);
+        if ((SR & SSP_SR_RNE) != 0)
+            break;
+    }
+
+    // Read data from SSP data
+    return SSP_ReceiveData(SSPx);
+}
+#endif
+
+
+#define SOFT_SPI
+
+static uint32_t delay;
+static PinName spi_miso;
+static PinName spi_mosi;
+static PinName spi_sclk;
+static uint32_t spi_frequency = 25000;
+static SPI_REG * sspr;
+static LPC_SPI_TypeDef * spi;
 
 static void spi__delay(uint32_t ticks) {
     for (;ticks;ticks--)
         asm volatile("nop\n\t");
 }
 
-void SPI_init(PinName mosi, PinName miso, PinName sclk)
+
+void SPI_reinit(int force_soft_spi)
 {
-#ifdef FORCE_SOFT_SPI
-    GPIO_setup(sclk); GPIO_output(sclk); spi_sclk = sclk;
-    GPIO_setup(mosi); GPIO_output(mosi); spi_mosi = mosi;
-    GPIO_setup(miso); GPIO_input(miso);  spi_miso = miso;
-#else
-    GPIO_setup(sclk); GPIO_output(sclk); spi_sclk = sclk;
-    GPIO_setup(mosi); GPIO_output(mosi); spi_mosi = mosi;
-    GPIO_setup(miso); GPIO_input(miso);  spi_miso = miso;
-	FIO_SetDir((mosi >> 5) & 7, 1UL << (mosi & 0x1F), 1);
-	FIO_SetDir((miso >> 5) & 7, 1UL << (miso & 0x1F), 0);
-	FIO_SetDir((sclk >> 5) & 7, 1UL << (sclk & 0x1F), 1);
-    if (mosi == P0_9 && miso == P0_8 && sclk == P0_7)
+    sspr = (SPI_REG *) 0;
+    spi = 0;
+
+    if(force_soft_spi)
     {
-        // SSP1 on 0.7,0.8,0.9
-        sspr = LPC_SSP1;
-//         isr_dispatch[1] = this;
- 		printf("SPI:Using SSP1\n");
-spi__delay(delay);
-
-        LPC_PINCON->PINSEL0 &= ~((3 << (7*2)) | (3 << (8*2)) | (3 << (9*2)));
-        LPC_PINCON->PINSEL0 |=  ((2 << (7*2)) | (2 << (8*2)) | (2 << (9*2)));
-
-spi__delay(delay);
-        LPC_SC->PCLKSEL0 &= 0xFFCFFFFF;
-        LPC_SC->PCLKSEL0 |= 0x00100000;
-spi__delay(delay);
-
-        LPC_SC->PCONP |= CLKPWR_PCONP_PCSSP1;
-spi__delay(delay);
-    }
-    else if (mosi == P0_18 && miso == P0_17 && sclk == P0_15)
-    {
-        // SSP0 on 0.15,0.16,0.17,0.18
-        sspr = LPC_SSP0;
-//         isr_dispatch[0] = this;
-
-        LPC_PINCON->PINSEL0 &= ~(3 << (15*2));
-        LPC_PINCON->PINSEL0 |=  (2 << (15*2));
-        LPC_PINCON->PINSEL1 &= ~( (3 << ((17*2)&30)) | (3 << ((18*2)&30)) );
-        LPC_PINCON->PINSEL1 |=  ( (2 << ((17*2)&30)) | (2 << ((18*2)&30)) );
-
-        LPC_SC->PCLKSEL1 &= 0xFFFFF3FF;
-        LPC_SC->PCLKSEL1 |= 0x00000400;
-
-        LPC_SC->PCONP |= CLKPWR_PCONP_PCSSP0;
-    }
-    else if (mosi == P1_24 && miso == P1_23 && sclk == P1_20)
-    {
-        // SSP0 on 1.20,1.23,1.24
-        sspr = LPC_SSP0;
-//         isr_dispatch[0] = this;
-
-// //         LPC_PINCON->PINSEL3 &= 0xFFFC3CFF;
-//         LPC_PINCON->PINSEL3 |= 0x0003C300;
-
-//         LPC_PINCON->PINSEL3 &= ~( (3 << ((20*2)&30)) | (3 << ((23*2)&30)) | (3 << ((24*2)&30)) );
-        LPC_PINCON->PINSEL3 |=  ( (3 << ((20*2)&30)) | (3 << ((23*2)&30)) | (3 << ((24*2)&30)) );
-
-        LPC_SC->PCLKSEL1 &= 0xFFFFF3FF;
-        LPC_SC->PCLKSEL1 |= 0x00000400;
-
-        LPC_SC->PCONP |= CLKPWR_PCONP_PCSSP0;
+        GPIO_setup(spi_sclk); GPIO_output(spi_sclk);
+        GPIO_setup(spi_mosi); GPIO_output(spi_mosi);
+        GPIO_setup(spi_miso); GPIO_input(spi_miso);
     }
     else
-#endif
     {
-        sspr = (LPC_SSP_TypeDef *) 0;
+
+#if USE_NEW_init
+        PINSEL_CFG_Type PinCfg;
+
+        // PinCfg.Funcnum = 3;
+        PinCfg.Funcnum = 2;
+        PinCfg.OpenDrain = 0;
+        PinCfg.Pinmode = 0;
+
+        PinCfg.Portnum = PORT(spi_sclk);
+        PinCfg.Pinnum  =  PIN(spi_sclk);
+        PINSEL_ConfigPin(&PinCfg);
+
+        PinCfg.Portnum = PORT(spi_miso);
+        PinCfg.Pinnum  =  PIN(spi_miso);
+        PINSEL_ConfigPin(&PinCfg);
+
+        PinCfg.Portnum = PORT(spi_mosi);
+        PinCfg.Pinnum  =  PIN(spi_mosi);
+        PINSEL_ConfigPin(&PinCfg);
+
+        //	uint32_t Databit; 		/** Databit number, should be SPI_DATABIT_x,
+        //							where x is in range from 8 - 16 */
+        //	uint32_t CPHA;			/** Clock phase, should be:
+        //							- SPI_CPHA_FIRST: first clock edge
+        //							- SPI_CPHA_SECOND: second clock edge */
+        //	uint32_t CPOL;			/** Clock polarity, should be:
+        //							- SPI_CPOL_HI: high level
+        //							- SPI_CPOL_LO: low level */
+        //	uint32_t Mode;			/** SPI mode, should be:
+        //							- SPI_MASTER_MODE: Master mode
+        //							- SPI_SLAVE_MODE: Slave mode */
+        //	uint32_t DataOrder;		/** Data order, should be:
+        //							- SPI_DATA_MSB_FIRST: MSB first
+        //							- SPI_DATA_LSB_FIRST: LSB first */
+        //	uint32_t ClockRate;		/** Clock rate,in Hz, should not exceed
+        //							(SPI peripheral clock)/8 */
+	SSP_CFG_Type cfg;
+        #if 1
+        cfg.CPHA = SSP_CPHA_FIRST;
+	cfg.CPOL = SSP_CPOL_HI;
+        #else
+        cfg.CPHA = SSP_CPHA_SECOND;
+	cfg.CPOL = SSP_CPOL_LO;
+        #endif
+	cfg.ClockRate = spi_frequency;
+	cfg.Databit = SSP_DATABIT_8;
+	cfg.Mode = SSP_MASTER_MODE;
+	cfg.FrameFormat = SSP_FRAME_SPI;
+        sspr = LPC_SSP1;
+        SSP_Init(sspr, &cfg);
+	sspr->CR1 |= SSP_CR1_SSP_EN;
+
+#else
+
+        GPIO_setup(spi_sclk); GPIO_output(spi_sclk);
+        GPIO_setup(spi_mosi); GPIO_output(spi_mosi);
+        GPIO_setup(spi_miso); GPIO_input(spi_miso);
+        // FIO_SetDir((spi_mosi >> 5) & 7, 1UL << (spi_mosi & 0x1F), 1);
+        // FIO_SetDir((spi_miso >> 5) & 7, 1UL << (spi_miso & 0x1F), 0);
+        // FIO_SetDir((spi_sclk >> 5) & 7, 1UL << (spi_sclk & 0x1F), 1);
+        if (spi_mosi == P0_9 && spi_miso == P0_8 && spi_sclk == P0_7)
+        {
+            // SSP1 on 0.7,0.8,0.9
+            sspr = LPC_SSP1;
+            //         isr_dispatch[1] = this;
+            //printf("SPI:Using SSP1\n");
+
+            LPC_PINCON->PINSEL0 &= ~((3 << (7*2)) | (3 << (8*2)) | (3 << (9*2)));
+            LPC_PINCON->PINSEL0 |=  ((2 << (7*2)) | (2 << (8*2)) | (2 << (9*2)));
+
+            LPC_SC->PCLKSEL0 &= 0xFFCFFFFF;
+            LPC_SC->PCLKSEL0 |= 0x00100000;
+
+            LPC_SC->PCONP |= CLKPWR_PCONP_PCSSP1;
+        }
+        else if (spi_mosi == P0_18 && spi_miso == P0_17 && spi_sclk == P0_15)
+        {
+            // SSP0 on 0.15,0.16,0.17,0.18
+            sspr = LPC_SSP0;
+            //         isr_dispatch[0] = this;
+
+            LPC_PINCON->PINSEL0 &= ~(3 << (15*2));
+            LPC_PINCON->PINSEL0 |=  (2 << (15*2));
+            LPC_PINCON->PINSEL1 &= ~( (3 << ((17*2)&30)) | (3 << ((18*2)&30)) );
+            LPC_PINCON->PINSEL1 |=  ( (2 << ((17*2)&30)) | (2 << ((18*2)&30)) );
+
+            LPC_SC->PCLKSEL1 &= 0xFFFFF3FF;
+            LPC_SC->PCLKSEL1 |= 0x00000400;
+
+            LPC_SC->PCONP |= CLKPWR_PCONP_PCSSP0;
+        }
+        else if (spi_mosi == P1_24 && spi_miso == P1_23 && spi_sclk == P1_20)
+        {
+            // SSP0 on 1.20,1.23,1.24
+            sspr = LPC_SSP0;
+            //         isr_dispatch[0] = this;
+
+            // //         LPC_PINCON->PINSEL3 &= 0xFFFC3CFF;
+            //         LPC_PINCON->PINSEL3 |= 0x0003C300;
+
+            //         LPC_PINCON->PINSEL3 &= ~( (3 << ((20*2)&30)) | (3 << ((23*2)&30)) | (3 << ((24*2)&30)) );
+            LPC_PINCON->PINSEL3 |=  ( (3 << ((20*2)&30)) | (3 << ((23*2)&30)) | (3 << ((24*2)&30)) );
+
+            LPC_SC->PCLKSEL1 &= 0xFFFFF3FF;
+            LPC_SC->PCLKSEL1 |= 0x00000400;
+
+            LPC_SC->PCONP |= CLKPWR_PCONP_PCSSP0;
+        }
+
+        if (sspr) {
+            sspr->CR0 = SSP_DATABIT_8 |
+                        SSP_FRAME_SPI;
+            sspr->CR1 = SSP_MASTER_MODE;
+            SPI_frequency(spi_frequency);
+            sspr->CR1 |= SSP_CR1_SSP_EN;
+        }
+#endif
     }
 
-    if (sspr) {
-spi__delay(delay);
-        sspr->CR0 = SSP_DATABIT_8 |
-                    SSP_FRAME_SPI;
-spi__delay(delay);
-        sspr->CR1 = SSP_MASTER_MODE;
-spi__delay(delay);
-        SPI_frequency(10000);
-spi__delay(delay);
-        sspr->CR1 |= SSP_CR1_SSP_EN;
-spi__delay(delay);
-    }
+}
+
+void SPI_init(PinName mosi, PinName miso, PinName sclk, int force_soft_spi)
+{
+    spi_sclk = sclk;
+    spi_mosi = mosi;
+    spi_miso = miso;
+    SPI_reinit(force_soft_spi);
 }
 
 void SPI_frequency(uint32_t f)
@@ -146,8 +396,14 @@ void SPI_frequency(uint32_t f)
     // CPSR = 2 to 254, even only
     // CR0[8:15] (SCR, 0..255) is a further prescale
 
-printf("SPI: frequency %lu:", f);
-    delay = 25000000 / f;
+    spi_frequency = f;
+
+#if USE_NEW_freq
+    SSP_SetClock(sspr, f);
+    delay = ssp_clk / f;
+#else
+    ssp_clk = 25000000;
+    delay = ssp_clk / f;
     // f = 25MHz / (CPSR . [SCR + 1])
     // CPSR . (SCR + 1) = 25MHz / f
     // min freq is 25MHz / (254 * 256)
@@ -170,37 +426,55 @@ printf("SPI: frequency %lu:", f);
             sspr->CR0 &= 0x00FF;
             sspr->CR0 |= (((delay / sspr->CPSR) - 1) & 0xFF) << 8;
         }
-printf(" CPSR=%lu, CR0=%lu", sspr->CPSR, sspr->CR0);
     }
-printf("\n");
+#endif
+    if (sspr) printf("spi: f=%lu sspclk=%lu delay=%lu CPSR=%lu CRf=%lu -> %lu\n", f, ssp_clk, delay, sspr->CPSR, ((sspr->CR0 >> 8) & 0xFF) + 1, ssp_clk / sspr->CPSR / (((sspr->CR0 >> 8) & 0xFF) + 1));
 }
 
 uint8_t SPI_write(uint8_t data)
 {
-//     _cs = 1;
     uint8_t r = 0;
+#if USE_NEW_write
     if (sspr) {
-//     printf("SPI: >0x%x ", data);
-spi__delay(100*delay);
-        while ((sspr->SR & SSP_SR_TNF) == 0);
-spi__delay(100*delay);
-        sspr->DR = data;
-spi__delay(100*delay);
-        while ((sspr->SR & SSP_SR_RNE) == 0);
-spi__delay(100*delay);
-        r = sspr->DR & 255;
-spi__delay(100*delay);
+        r = SSP_Poll8(sspr, data);
     }
-#ifdef SOFT_SPI
+#else
+    // _cs = 1;
+    if (sspr) {
+        //printf("SPI: >0x%x ", data);
+        // while ((sspr->SR & SSP_SR_TNF) == 0);
+        while(1)
+        {
+            uint32_t SR = sspr->SR;
+            //printf("/ 0x%lx\n", SR);
+            if ((SR & SSP_SR_TNF) != 0)
+                break;
+        }
+        //spi__delay(100*delay);
+        sspr->DR = data;
+        //spi__delay(100*delay);
+        // while ((sspr->SR & SSP_SR_RNE) == 0);
+        while(1)
+        {
+            uint32_t SR = sspr->SR;
+            //printf("\\ 0x%lx\n", SR);
+            if ((SR & SSP_SR_RNE) != 0)
+                break;
+        }
+        //spi__delay(100*delay);
+        r = sspr->DR & 0xFF;
+        //printf("= 0x%x\n", r);
+        //spi__delay(100*delay);
+    }
+#endif
+    #ifdef SOFT_SPI
     else {
-//     printf("SPISOFT: >0x%x", data);
+        //printf("SPISOFT: >0x%x", data);
         uint8_t bits = data;
-#define delay1  (delay >> 1)
+        #define delay1  (delay >> 1)
         for (int i = 0; i < 8; i++) {
-//spi__delay(delay1);
             GPIO_clear(spi_sclk);               // clock LOW
 
-//spi__delay(delay1);
             if (bits & 0x80)                            // WRITE
                 GPIO_set(spi_mosi);
             else
@@ -217,13 +491,11 @@ spi__delay(100*delay);
             if (GPIO_get(spi_miso))                     // READ
                 r |= 1;
         }
-//spi__delay(delay1);
         GPIO_clear(spi_sclk);                   // clock LOW
-//spi__delay(delay1);
     }
-#endif
-//     if(r == 0xFF) printf(" <0x%x\b\b\b\b\b\b", r); else printf(" <0x%x\n", r);
-//     if(data != 0xFF || r != 0xFF) printf("SPI%s: >0x%x <0x%x\n", sspr?"":"soft", data, r);
+    #endif
+    //if(r == 0xFF) printf(" <0x%x\b\b\b\b\b\b", r); else printf(" <0x%x\n", r);
+    //if(data != 0xFF || r != 0xFF) printf("SPI%s: >0x%x <0x%x\n", sspr?"":"soft", data, r);
     return r;
 }
 
