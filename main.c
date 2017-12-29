@@ -48,6 +48,10 @@
 
 #define DFU_BTN     PLAY_BTN
 
+#define BOOT_LED		0b10000
+
+#define DBflash(x)
+
 #ifndef DEBUG_MESSAGES
 #define printf(...) do {} while (0)
 #endif
@@ -67,13 +71,18 @@ static uint32_t delay_loop(uint32_t count)
 	return del;
 }
 
-void setleds(int leds)
+void setledsfast(int leds)
 {
 	GPIO_write(LED1, leds &  1);
 	GPIO_write(LED2, leds &  2);
 	GPIO_write(LED3, leds &  4);
 	GPIO_write(LED4, leds &  8);
 	GPIO_write(LED5, ! (leds & 16));
+}
+
+void setleds(int leds)
+{
+	setledsfast(leds);
 	delay_loop(1000000);
 }
 
@@ -92,15 +101,16 @@ void start_dfu(void)
 	usb_disconnect();
 }
 
-void check_sd_firmware(void)
+int check_sd_firmware(void)
 {
 	int r;
- 	printf("Check SD\n");
+ 	DBflash(printf("Check SD\n");)
 	f_mount(0, &fat);
 	if ((r = f_open(&file, firmware_file, FA_READ)) == FR_OK)
 	{
-		setleds(0b11111);
-// 		printf("Flashing firmware...\n");
+		// show 0xF = flashing
+		setleds(BOOT_LED | 0b1111);
+ 		DBflash(printf("Flashing firmware...\n");)
 		uint8_t buf[512];
 		unsigned int r = sizeof(buf);
 		uint32_t address = USER_FLASH_START;
@@ -109,12 +119,13 @@ void check_sd_firmware(void)
 			if (f_read(&file, buf, sizeof(buf), &r) != FR_OK)
 			{
 				f_close(&file);
-				return;
+				return 0;
 			}
 
-			setleds(0b10000 | (address - USER_FLASH_START) >> 15);
+ 			DBflash(printf("  0x%lx\r", address);)
 
- 			//printf("\t0x%lx\n", address);
+			// show address
+			setledsfast(BOOT_LED | (address - USER_FLASH_START) >> 15);
 
 			write_flash((void *) address, (char *)buf, sizeof(buf));
 			address += r;
@@ -122,15 +133,19 @@ void check_sd_firmware(void)
 		f_close(&file);
 		if (address > USER_FLASH_START)
 		{
- 			printf("Complete!\n");
+ 			DBflash(printf("complete!\n");)
 			r = f_unlink(firmware_old);
 			r = f_rename(firmware_file, firmware_old);
+			return 1;
 		}
 	}
 	else
 	{
- 		printf("open: %d\n", r);
+		if(r == FR_NO_FILE)
+			return 1;
+		//printf("flash open: %d\n", r);
 	}
+	return 0;
 }
 
 // this seems to fix an issue with handoff after poweroff
@@ -248,50 +263,47 @@ int main(void)
 	GPIO_init(P2_6); GPIO_output(P2_6); GPIO_write(P2_6, 0);
 	GPIO_init(P2_7); GPIO_output(P2_7); GPIO_write(P2_7, 0);
 
-	setleds(0b10000);
+	// clear
+	setleds(BOOT_LED | 0b0000);
 
 	UART_init(UART_RX, UART_TX, APPBAUD);
 
-	setleds(0b11011);
+	// show 0xB = booting
+	setleds(BOOT_LED | 0b1011);
 
 	printf("\n\nBootloader Start\n");
 
 	// give SD card time to wake up
 	//for (volatile int i = (1UL<<12); i; i--);
-	for(int waiting = 1; waiting <= 4; waiting++)
+	for(int waiting = 1; waiting <= 10; waiting++)
 	{
-		//printf("waiting %d %d\n", waiting, dfu_btn_pressed());
-		//delay_loop(1000000);
+		// show wiggle = waiting for SD card
 		if(waiting & 1)
-			setleds(0b10101);
+			setleds(BOOT_LED | 0b0101);
 		else
-			setleds(0b11010);
-		printf("init SD\n");
+			setleds(BOOT_LED | 0b1010);
 		SDCard_init(P0_9, P0_8, P0_7, P0_6);
-		if (SDCard_disk_initialize() == 0)
-		{
-			setleds(0b11100);
-			check_sd_firmware();
+		if(check_sd_firmware())
 			break;
-		}
-		else
-			printf("init SD FAILED\n");
 	}
 
 	int dfu = 0;
 	if (dfu_btn_pressed() == 0)
 	{
+		// show DFU reason 1 = button
+		setleds(BOOT_LED | 0b0001);
 		printf("button pressed, entering DFU mode\n");
-		setleds(0b10001);
 		dfu = 1;
 	}
 	else if (WDT_ReadTimeOutFlag()) {
-		setleds(0b10010);
 		WDT_ClrTimeOutFlag();
+		// show DFU reason 2 = watchdog
+		setleds(BOOT_LED | 0b0010);
 		printf("WATCHDOG reset, entering DFU mode\n");
 		dfu = 1;
 	} else if (*(uint32_t *)USER_FLASH_START == 0xFFFFFFFF) {
-		setleds(0b10100);
+		// show DFU reason 3 = flash is empty
+		setleds(BOOT_LED | 0b0100);
 		printf("User flash empty, enabling DFU\n");
 		dfu = 1;
 	}
@@ -315,16 +327,18 @@ int main(void)
 	while (UART_busy());
 	UART_deinit();
 
-	setleds(0b10001);
-	setleds(0b10010);
-	setleds(0b10100);
-	setleds(0b11000);
+	// show we are starting
+	setleds(BOOT_LED | 0b0001);
+	setleds(BOOT_LED | 0b0010);
+	setleds(BOOT_LED | 0b0100);
+	setleds(BOOT_LED | 0b1000);
 	setleds(0b00000);
 	new_execute_user_code();
 
-    UART_init(UART_RX, UART_TX, APPBAUD);
+  UART_init(UART_RX, UART_TX, APPBAUD);
 
-	setleds(0b11110);
+	// show 0xE = error
+	setleds(BOOT_LED | 0b1110);
 	printf("This should never happen\n");
 
 	while (UART_busy());
