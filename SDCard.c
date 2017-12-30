@@ -23,7 +23,7 @@
  *                                                                            *
  *****************************************************************************/
 
-#define DBcmd(x)          x
+#define DBcmd(x)
 #define DBcmdx(x)
 #define DBreadblock(x)
 

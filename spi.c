@@ -34,6 +34,12 @@
 #define USE_NEW_write_wait_tx_not_full     1
 #define USE_NEW_write_overrun_exit         1
 
+// measure at 25000Hz (slow spi init frequence)
+// change here to fit 40us/cycle, higher number -> longer delay
+// calibration may depend on compiler options
+// this is for -Os -g
+#define SPI_SOFT_DELAY_CALIBRATION          6500000
+
 #include "spi.h"
 
 #include "lpc17xx_clkpwr.h"
@@ -48,7 +54,7 @@
 #include "lpc17xx_clkpwr.h"
 //#include "lpc17xx_libcfg_default.h"
 
-static uint32_t delay;
+static uint32_t spi_soft_delay = 0;
 static PinName spi_miso;
 static PinName spi_mosi;
 static PinName spi_sclk;
@@ -399,10 +405,10 @@ void SPI_frequency(uint32_t f)
 
 #if USE_NEW_freq
     SSP_SetClock(sspr, f);
-    delay = ssp_clk / f;
+    uint32_t clk_per_cycle = ssp_clk / f;
 #else
     ssp_clk = 25000000;
-    delay = ssp_clk / f;
+    uint32_t clk_per_cycle = ssp_clk / f;
     // f = 25MHz / (CPSR . [SCR + 1])
     // CPSR . (SCR + 1) = 25MHz / f
     // min freq is 25MHz / (254 * 256)
@@ -418,16 +424,18 @@ void SPI_frequency(uint32_t f)
             sspr->CR0 &= 0x00FF;
         }
         else {
-            sspr->CPSR = delay & 0xFE;
+            sspr->CPSR = clk_per_cycle & 0xFE;
             // CPSR . (SCR + 1) = f;
             // (SCR + 1) = f / CPSR;
             // SCR = (f / CPSR) - 1
             sspr->CR0 &= 0x00FF;
-            sspr->CR0 |= (((delay / sspr->CPSR) - 1) & 0xFF) << 8;
+            sspr->CR0 |= (((clk_per_cycle / sspr->CPSR) - 1) & 0xFF) << 8;
         }
     }
 #endif
-    if (sspr) printf("spi: f=%lu sspclk=%lu delay=%lu CPSR=%lu CRf=%lu -> %lu\n", f, ssp_clk, delay, sspr->CPSR, ((sspr->CR0 >> 8) & 0xFF) + 1, ssp_clk / sspr->CPSR / (((sspr->CR0 >> 8) & 0xFF) + 1));
+    spi_soft_delay = (2*SPI_SOFT_DELAY_CALIBRATION/spi_frequency-1)/2;
+    if (sspr)  printf("spi: f=%lu sspclk=%lu clk_per_cycle=%lx CPSR=%lu CRf=%lu -> %lu\n", f, ssp_clk, clk_per_cycle, sspr->CPSR, ((sspr->CR0 >> 8) & 0xFF) + 1, ssp_clk / sspr->CPSR / (((sspr->CR0 >> 8) & 0xFF) + 1));
+    if (!sspr) printf("spi: f=%lu soft_delay=%lx\n", f, spi_soft_delay);
 }
 
 uint8_t SPI_write(uint8_t data)
@@ -441,33 +449,15 @@ uint8_t SPI_write(uint8_t data)
     // _cs = 1;
     if (sspr) {
         DBwrite(printf("SPI: >0x%x ", data);)
-        #if 1
-          while ((sspr->SR & SSP_SR_TNF) == 0);
-        #else
-          while(1)
-          {
-              uint32_t SR = sspr->SR;
-              //printf("/ 0x%lx\n", SR);
-              if ((SR & SSP_SR_TNF) != 0)
-                  break;
-          }
-        #endif
+
+        while ((sspr->SR & SSP_SR_TNF) == 0);
 
         sspr->DR = data;
 
-        #if 1
-          while ((sspr->SR & SSP_SR_RNE) == 0);
-        #else
-          while(1)
-          {
-              uint32_t SR = sspr->SR;
-              //printf("\\ 0x%lx\n", SR);
-              if ((SR & SSP_SR_RNE) != 0)
-                  break;
-          }
-        #endif
+        while ((sspr->SR & SSP_SR_RNE) == 0);
 
         r = sspr->DR & 0xFF;
+
         DBwrite(printf("= 0x%x\n", r);)
     }
 #endif
@@ -475,7 +465,6 @@ uint8_t SPI_write(uint8_t data)
     else {
         DBwrite(printf("SPISOFT: >0x%x ", data);)
         uint8_t bits = data;
-        #define delay1  (delay >> 1)
         for (int i = 0; i < 8; i++) {
             GPIO_clear(spi_sclk);               // clock LOW
 
@@ -485,11 +474,11 @@ uint8_t SPI_write(uint8_t data)
                 GPIO_clear(spi_mosi);
             bits <<= 1;
 
-            spi__delay(delay1);                                // DELAY
+            spi__delay(spi_soft_delay);                         // DELAY
 
             GPIO_set(spi_sclk);                 // clock HIGH
 
-            spi__delay(delay1);                                // DELAY
+            spi__delay(spi_soft_delay);                         // DELAY
 
             r <<= 1;
             if (GPIO_get(spi_miso))                     // READ
