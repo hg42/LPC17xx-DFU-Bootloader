@@ -23,6 +23,7 @@
  *                                                                            *
  *****************************************************************************/
 
+
 #include "usbhw.h"
 #include "usbcore.h"
 
@@ -42,6 +43,11 @@
 #include "min-printf.h"
 
 #include "lpc17xx_wdt.h"
+
+// enable for tests
+#define DO_NOT_FLASH     		1
+#define KEEP_FIRMWARE_BIN 	1
+
 
 #define PLAY_BTN    P2_12
 #define ISP_BTN	    P2_10
@@ -127,15 +133,19 @@ int check_sd_firmware(void)
 			// show address
 			setledsfast(BOOT_LED | (address - USER_FLASH_START) >> 15);
 
-			write_flash((void *) address, (char *)buf, sizeof(buf));
+			#if ! DO_NOT_FLASH
+				write_flash((void *) address, (char *)buf, sizeof(buf));
+			#endif
 			address += r;
 		}
 		f_close(&file);
 		if (address > USER_FLASH_START)
 		{
  			DBflash(printf("complete!\n");)
-			r = f_unlink(firmware_old);
-			r = f_rename(firmware_file, firmware_old);
+			#if ! KEEP_FIRMWARE_BIN
+				r = f_unlink(firmware_old);
+				r = f_rename(firmware_file, firmware_old);
+			#endif
 			return 1;
 		}
 	}

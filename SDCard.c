@@ -27,10 +27,8 @@
 #define DBcmdx(x)
 #define DBreadblock(x)
 
-#define FORCE_SOFT_SPI    0
-#define SDCARD_SPEED      4200000      // +5% as upper limit, because otherwise 3.1MHz will be calculated
-//#define SDCARD_SPEED      12500000
-#define SD_COMMAND_TIMEOUT 100  //4096
+#define SDCARD_SPEED        4000000
+#define SD_COMMAND_TIMEOUT      100  //4096
 
 #include "min-printf.h"
 #include <stdlib.h>
@@ -73,7 +71,7 @@ static int cardtype;
 
 void SDCard_init(PinName mosi, PinName miso, PinName sclk, PinName cs)
 {
-  SPI_init(mosi, miso, sclk, FORCE_SOFT_SPI);
+  SPI_init(mosi, miso, sclk);
   GPIO_init(cs);
   GPIO_output(cs);
   GPIO_set(cs);
@@ -523,7 +521,7 @@ int SDCard__cmd58(uint32_t *ocr)
             *ocr |= SPI_write(0xFF) << 16;
             *ocr |= SPI_write(0xFF) << 8;
             *ocr |= SPI_write(0xFF) << 0;
-//            printf("OCR = 0x%08X\n", *ocr);
+            //printf("OCR = 0x%x\n", *ocr);
             GPIO_set(sdcard_cs);
             SPI_write(0xFF);
             return response;
